@@ -33,6 +33,10 @@ uint16_t dummy_16bit_bin = 0;
 
 uint8_t overflow_demo = 0;
 
+uint8_t a = 0;
+int8_t b = 0;
+int8_t c = 0;
+
 // headers
 
 int main(void)
@@ -55,7 +59,11 @@ int main(void)
 
 	overflow_demo = dummy_8bit + 1;
 	overflow_demo = overflow_demo + 1;
-	overflow_demo = 735;
+	// overflow_demo = 735;
+
+	a = 200;
+	b = 200;
+	c = -1;
 
 
     /* Loop forever */
