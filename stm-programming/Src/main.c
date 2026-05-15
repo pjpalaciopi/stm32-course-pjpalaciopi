@@ -22,8 +22,44 @@
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
+// define variables del sistema
+uint8_t dummy_8bit = 0;
+uint16_t dummy_16bit = 0;
+uint32_t dummy_32bit = 0;
+
+uint16_t dummy_16bit_dec = 0;
+uint16_t dummy_16bit_hex = 0;
+uint16_t dummy_16bit_bin = 0;
+
+uint8_t overflow_demo = 0;
+
+// headers
+
 int main(void)
 {
+	dummy_8bit = 0b11001010;
+	dummy_16bit = 4550;
+	dummy_32bit = 1234547458;
+
+	dummy_16bit_dec = 32;
+	dummy_16bit_hex = 0x20;
+	dummy_16bit_bin = 0b100000;
+
+	dummy_16bit_bin = dummy_16bit_bin << 4;
+	dummy_16bit_bin = dummy_16bit_bin >> 5;
+
+	//exponiendo overflow
+	dummy_8bit = 255;
+	dummy_16bit = 255;
+	dummy_32bit = 255;
+
+	overflow_demo = dummy_8bit + 1;
+	overflow_demo = overflow_demo + 1;
+	overflow_demo = 735;
+
+
     /* Loop forever */
-	for(;;);
+	while(1);
 }
+
+// funciones
