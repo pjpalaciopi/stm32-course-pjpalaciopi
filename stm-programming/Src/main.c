@@ -104,6 +104,31 @@ uint8_t result_17 = 0;
 uint8_t input = 0;
 uint8_t output = 0;
 
+// exercise 2.1 variables
+uint8_t value_21 = 0b10110101;
+uint8_t mask_21 = 0b00001111;
+uint8_t result_21 = 0;
+
+// exercise 2.2 variables
+uint8_t value_22 = 0b10100000;
+uint8_t mask_22 = 0b00000101;
+uint8_t result_22 = 0;
+
+// exercise 2.3 variables
+uint8_t a_23 = 0b00001111;
+uint8_t b_23 = 0b10100101;
+uint8_t result_23_1 = 0;
+uint8_t result_23_2 = 0;
+uint8_t value_23 = 0b11111111;
+
+// exercise 2.4 variables
+uint8_t value_24 = 0b10110011;
+uint8_t mask_24 = 0b00001111;
+uint8_t result_24_1 = 0;
+uint8_t result_24_2 = 0;
+
+// exercise 2.5 variables
+uint8_t simulated_register = 0x00;
 
 // headers
 
@@ -272,8 +297,36 @@ int main(void)
 			break;
 	}
 
+	// exercise 2.1
+	result_21 = value_21 & mask_21;			// prediction = 0b00000101 = 5
+	result_21 = value_21 & (mask_21 << 4);	// (mask_21<<4) = (0b11110000) with the & operator it keeps the 4 upper bits
+
+	// exercise 2.2
+	result_22 = value_22 | mask_22;			// prediction = 0b10100101
+
+	// exercise 2.3
+	result_23_1 = ~a_23;	// prediction = 0b11110000
+	result_23_2 = ~b_23;	// prediction = 0b01011010
+	value_23 = value_23 & ~(0b00000011);	// prediction = 0b11111100
+
+	// exercise 2.4
+	result_24_1 = value_24 ^ mask_24;			// prediction = 0b10111100
+	result_24_2 = result_24_1 ^ mask_24;		// prediction = 0b10110011
+
+	// exercise 2.5
+	simulated_register |= (0b11 << 3);	// prediction = 0b00011000
+	simulated_register &= ~(0b1 << 3);	// prediction = 0b00010000
+	simulated_register ^= (0b1 << 4);	// prediction = 0b0
+	simulated_register ^= (0b1 << 4);	// prediction = 0b00010000
+
+	// exercise 2.6
+	RCC->AHB1ENR |= (1<<0);
+
     /* Loop forever */
-	while(1);
+	while(1)
+	{
+
+	}
 }
 
-// funciones
+// functions
