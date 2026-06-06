@@ -57,8 +57,8 @@ void configuration(void){
 	TIM3->ARR = (30000 - 1);				// set autorreload to 3250 * 0.1 ms = 325 ms
 	TIM3->PSC = (1600 -1);					// set prescaler to 0.1 ms
 	TIM3->CNT = 0;							// reset counter
-	TIM3->SR &= ~(TIM_SR_UIF);				// clean interruption flag
-	TIM3->DIER &= ~(TIM_DIER_UIE);			// clean interruption enable
+	TIM3->SR &= ~(TIM_SR_UIF);				// clear interruption flag
+	TIM3->DIER &= ~(TIM_DIER_UIE);			// clear interruption enable
 	TIM3->DIER |= TIM_DIER_UIE;				// set interruption enable
 	/* The NVIC must know that an interrupt from the TIM3 is enabled */
 	__NVIC_EnableIRQ(TIM3_IRQn);		// found in the /Includes/.../Core/Include/core_cm4.h file
@@ -66,15 +66,15 @@ void configuration(void){
 	TIM3->CR1 &= ~(TIM_CR1_DIR);		// set as upcounter
 	TIM3->CR1 &= ~(TIM_CR1_ARPE);		// clean arr preload
 	TIM3->CR1 |= (TIM_CR1_ARPE);		// set arr preload
-	TIM3->CR1 &= ~(TIM_CR1_CEN);		// clean timer enable
+	TIM3->CR1 &= ~(TIM_CR1_CEN);		// clear timer enable
 	TIM3->CR1 |= (TIM_CR1_CEN);			// set timer enable
 }
-
+/* The IRQ are the startup file */
 void TIM3_IRQHandler(void){
 	// verify which flag is up for the interruption
 	if (TIM3->SR && TIM_SR_UIF){
 		changeState();					// change the states of the stop light
-		TIM3->SR &= ~(TIM_SR_UIF);		// clean flag
+		TIM3->SR &= ~(TIM_SR_UIF);		// clear flag
 	}
 }
 
