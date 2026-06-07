@@ -18,22 +18,23 @@ typedef enum{
 
 // variable
 volatile uint8_t refresh_interrupt_flag = 0;
-uint16_t counter = 3257;
+uint16_t counter = 0;
 uint8_t digit_position = 0;
 uint8_t digit_number = 0;
-
 uint8_t position = 0;
-
-
 uint8_t units = 0;
 uint8_t tens = 0;
 uint8_t hundreds = 0;
 uint8_t thousands = 0;
 
+uint8_t PC1State = 0;
+uint8_t PC0State = 0;
 
 // headers
 void initGPIO(void);
 void initTimer(void);
+void initEXTI(void);
+
 uint8_t changeDisplay(void);
 void drawNumber(uint8_t number);
 uint8_t extractNumber(uint8_t digit);
@@ -41,6 +42,7 @@ uint8_t extractNumber(uint8_t digit);
 int main(void){
 	initGPIO();
 	initTimer();
+	initEXTI();
 
 	while(1){
 		if (refresh_interrupt_flag){
@@ -50,6 +52,8 @@ int main(void){
 
 			refresh_interrupt_flag = 0;
 		}
+		PC1State = (GPIOC->IDR >> 1) & 1;
+		PC0State = (GPIOC->IDR) & 1;
 	}
 }
 
@@ -87,15 +91,15 @@ void initGPIO(void){
 	/* Set initial state in the output data register as 1 (Turn off for a common anode display) */
 	GPIOC->ODR |= GPIO_ODR_OD13;
 
-	/* Configure PC11 as digit 2 of the 7 segment display */
-	/* Set GPIOC Pin 11 as output */
-	GPIOC->MODER |= GPIO_MODER_MODE11_0;
+	/* Configure PC6 as digit 2 of the 7 segment display */
+	/* Set GPIOC Pin 6 as output */
+	GPIOC->MODER |= GPIO_MODER_MODE6_0;
 	/* Set output type as push-pull */
-	GPIOC->OTYPER &= ~GPIO_OTYPER_OT11;
+	GPIOC->OTYPER &= ~GPIO_OTYPER_OT6;
 	/* Set output speed as fast */
-	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED11_1;
+	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED6_1;
 	/* Set initial state in the output data register as 1 (Turn off for a common anode display) */
-	GPIOC->ODR |= GPIO_ODR_OD11;
+	GPIOC->ODR |= GPIO_ODR_OD6;
 
 	/* Configure PC12 as digit 3 of the 7 segment display */
 	/* Set GPIOC Pin 12 as output */
@@ -107,57 +111,27 @@ void initGPIO(void){
 	/* Set initial state in the output data register as 1 (Turn off for a common anode display) */
 	GPIOC->ODR |= GPIO_ODR_OD12;
 
-	/* Configure PC10 as digit 4 of the 7 segment display */
-	/* Set GPIOC Pin 10 as output */
-	GPIOC->MODER |= GPIO_MODER_MODE10_0;
+	/* Configure PC8 as digit 4 of the 7 segment display */
+	/* Set GPIOC Pin 8 as output */
+	GPIOC->MODER |= GPIO_MODER_MODE8_0;
 	/* Set output type as push-pull */
-	GPIOC->OTYPER &= ~GPIO_OTYPER_OT10;
+	GPIOC->OTYPER &= ~GPIO_OTYPER_OT8;
 	/* Set output speed as fast */
-	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED10_1;
+	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED8_1;
 	/* Set initial state in the output data register as 1 (Turn off for a common anode display) */
-	GPIOC->ODR |= GPIO_ODR_OD10;
+	GPIOC->ODR |= GPIO_ODR_OD8;
 
-	/* Configure PB12 as segment A of the display */
-	/* Set GPIOB Pin 12 as output */
-	GPIOB->MODER |= GPIO_MODER_MODE12_0;
+	/* Configure PC11 as segment A of the display */
+	/* Set GPIOC Pin 11 as output */
+	GPIOC->MODER |= GPIO_MODER_MODE11_0;
 	/* Set output type as push-pull */
-	GPIOB->OTYPER &= ~GPIO_OTYPER_OT12;
+	GPIOC->OTYPER &= ~GPIO_OTYPER_OT11;
 	/* Set output speed as fast */
-	GPIOB->OSPEEDR |= GPIO_OSPEEDR_OSPEED12_1;
+	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED11_1;
 	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
-	GPIOB->ODR &= ~GPIO_ODR_OD12;
+	GPIOC->ODR &= ~GPIO_ODR_OD11;
 
-	/* Configure PA12 as segment B of the display */
-	/* Set GPIOA Pin 12 as output */
-	GPIOA->MODER |= GPIO_MODER_MODE12_0;
-	/* Set output type as push-pull */
-	GPIOA->OTYPER &= ~GPIO_OTYPER_OT12;
-	/* Set output speed as fast */
-	GPIOA->OSPEEDR |= GPIO_OSPEEDR_OSPEED12_1;
-	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
-	GPIOA->ODR &= ~GPIO_ODR_OD12;
-
-	/* Configure PC3 as segment C of the display */
-	/* Set GPIOC Pin 3 as output */
-	GPIOC->MODER |= GPIO_MODER_MODE3_0;
-	/* Set output type as push-pull */
-	GPIOC->OTYPER &= ~GPIO_OTYPER_OT3;
-	/* Set output speed as fast */
-	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED3_1;
-	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
-	GPIOC->ODR &= ~GPIO_ODR_OD3;
-
-	/* Configure PB7 as segment D of the display */
-	/* Set GPIOB Pin 7 as output */
-	GPIOB->MODER |= GPIO_MODER_MODE7_0;
-	/* Set output type as push-pull */
-	GPIOB->OTYPER &= ~GPIO_OTYPER_OT7;
-	/* Set output speed as fast */
-	GPIOB->OSPEEDR |= GPIO_OSPEEDR_OSPEED7_1;
-	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
-	GPIOB->ODR &= ~GPIO_ODR_OD7;
-
-	/* Configure PD2 as segment E of the display */
+	/* Configure PD2 as segment B of the display */
 	/* Set GPIOD Pin 2 as output */
 	GPIOD->MODER |= GPIO_MODER_MODE2_0;
 	/* Set output type as push-pull */
@@ -167,8 +141,18 @@ void initGPIO(void){
 	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
 	GPIOD->ODR &= ~GPIO_ODR_OD2;
 
-	/* Configure PA11 as segment F of the display */
-	/* Set GPIOA Pin 11 as output */
+	/* Configure PC5 as segment C of the display */
+	/* Set GPIOC Pin 5 as output */
+	GPIOC->MODER |= GPIO_MODER_MODE5_0;
+	/* Set output type as push-pull */
+	GPIOC->OTYPER &= ~GPIO_OTYPER_OT5;
+	/* Set output speed as fast */
+	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED5_1;
+	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
+	GPIOC->ODR &= ~GPIO_ODR_OD5;
+
+	/* Configure PA11 as segment D of the display */
+	/* Set GPIOB Pin 7 as output */
 	GPIOA->MODER |= GPIO_MODER_MODE11_0;
 	/* Set output type as push-pull */
 	GPIOA->OTYPER &= ~GPIO_OTYPER_OT11;
@@ -177,15 +161,43 @@ void initGPIO(void){
 	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
 	GPIOA->ODR &= ~GPIO_ODR_OD11;
 
-	/* Configure PC2 as segment G of the display */
-	/* Set GPIOA Pin 11 as output */
-	GPIOC->MODER |= GPIO_MODER_MODE2_0;
+	/* Configure PA12 as segment E of the display */
+	/* Set GPIOA Pin 12 as output */
+	GPIOA->MODER |= GPIO_MODER_MODE12_0;
 	/* Set output type as push-pull */
-	GPIOC->OTYPER &= ~GPIO_OTYPER_OT2;
+	GPIOA->OTYPER &= ~GPIO_OTYPER_OT12;
 	/* Set output speed as fast */
-	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED2_1;
+	GPIOA->OSPEEDR |= GPIO_OSPEEDR_OSPEED12_1;
 	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
-	GPIOC->ODR &= ~GPIO_ODR_OD2;
+	GPIOA->ODR &= ~GPIO_ODR_OD12;
+
+	/* Configure PC10 as segment F of the display */
+	/* Set GPIOC Pin 10 as output */
+	GPIOC->MODER |= GPIO_MODER_MODE10_0;
+	/* Set output type as push-pull */
+	GPIOC->OTYPER &= ~GPIO_OTYPER_OT10;
+	/* Set output speed as fast */
+	GPIOC->OSPEEDR |= GPIO_OSPEEDR_OSPEED10_1;
+	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
+	GPIOC->ODR &= ~GPIO_ODR_OD10;
+
+	/* Configure PB12 as segment G of the display */
+	/* Set GPIOB Pin 12 as output */
+	GPIOB->MODER |= GPIO_MODER_MODE12_0;
+	/* Set output type as push-pull */
+	GPIOB->OTYPER &= ~GPIO_OTYPER_OT12;
+	/* Set output speed as fast */
+	GPIOB->OSPEEDR |= GPIO_OSPEEDR_OSPEED12_1;
+	/* Set initial state in the output data register as 0 (Turn on for a common anode display) */
+	GPIOB->ODR &= ~GPIO_ODR_OD12;
+
+	/* configure PC1 as input for the external interrupt */
+	GPIOC->MODER &= ~(GPIO_MODER_MODE1);			// input mode
+	GPIOC->PUPDR &= ~(GPIO_PUPDR_PUPD1);			// no pullup pulldown
+
+	/* configure PC0 as input for the external interrupt */
+	GPIOC->MODER &= ~(GPIO_MODER_MODE0);			// input mode
+	GPIOC->PUPDR &= ~(GPIO_PUPDR_PUPD0);			// no pullup pulldown
 }
 
 /* Initial configuration for the timers*/
@@ -242,16 +254,25 @@ void initTimer(void){
 }
 
 /* Initial configuration for the EXTI */
-void init_EXTI(void){
+void initEXTI(void){
 	/* Turn on clock for SYSCONFG */
-	RCC->APB1ENR |= RCC_APB2ENR_SYSCFGEN;
-	/* Configure SYSCONFG EXTI MUX */
-	SYSCFG->EXTICR[0] &= ~(SYSCFG_EXTICR1_EXTI1);	// clean register
-	SYSCFG->EXTICR[0] |= (SYSCFG_EXTICR1_EXTI1_PC);	// write EXTI1 to work with port GPIOC (PC1)
+	RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+
+	/* Configure SYSCONFG EXTI MUX to select EXTI1*/
+	SYSCFG->EXTICR[0] &= ~(SYSCFG_EXTICR1_EXTI1);	// Clear register
+	SYSCFG->EXTICR[0] |= (SYSCFG_EXTICR1_EXTI1_PC);	// Write EXTI1 to work with port GPIOC (PC1)
 	EXTI->FTSR |= EXTI_FTSR_TR1;					// Enable falling edge detection
-	NVIC_EnableIRQ(EXTI1_IRQn);						// Tell NVIC
-	EXTI->PR |= EXTI_PR_PR1;						// clean flag
+	NVIC_EnableIRQ(EXTI1_IRQn);						// Tell NVIC I'm using EXTI1
+	EXTI->PR |= EXTI_PR_PR1;						// Clear flag
 	EXTI->IMR |= EXTI_IMR_IM1;						// Enable interrupt
+
+	/* Configure SYSCONFG EXTI MUX to select EXTI0*/
+	SYSCFG->EXTICR[0] &= ~(SYSCFG_EXTICR1_EXTI0);	// Clear register
+	SYSCFG->EXTICR[0] |= (SYSCFG_EXTICR1_EXTI0_PC);	// Write EXTI1 to work with port GPIOC (PC0)
+	EXTI->RTSR |= EXTI_RTSR_TR0;					// Enable rising edge detection
+	NVIC_EnableIRQ(EXTI0_IRQn);						// Tell NVIC I'm using EXTI0
+	EXTI->PR |= EXTI_PR_PR0;						// Clear flag
+	EXTI->IMR |= EXTI_IMR_IM0;						// Enable interrupt
 }
 
 
@@ -269,7 +290,26 @@ void TIM4_IRQHandler(void){
 	/* Check which flag is up */
 	if (TIM4->SR && TIM_SR_UIF){
 		TIM4->SR &= ~TIM_SR_UIF;		// clear flag
+		/* I write to a custom flag to avoid doing computations during the interruption */
 		refresh_interrupt_flag = 1;
+	}
+}
+
+/* ISR for the EXTI1 counter up */
+void EXTI1_IRQHandler(void){
+	if (EXTI->PR && EXTI_PR_PR1){
+		/* The EXTI pending register is cleared by writing 1 */
+		EXTI->PR |= EXTI_PR_PR1;		// clear flag
+		counter--;						// every variable to be changed between an interruption must be volatile
+	}
+}
+
+/* ISR for the EXTI0 counter down */
+void EXTI0_IRQHandler(void){
+	if (EXTI->PR && EXTI_PR_PR0){
+		/* The EXTI pending register is cleared by writing 1 */
+		EXTI->PR |= EXTI_PR_PR0;		// clear flag
+		counter++;						// every variable to be changed between an interruption must be volatile
 	}
 }
 
@@ -279,9 +319,9 @@ uint8_t changeDisplay(void){
 		case display1:
 			/* Turn on digit 1 and turn off the rest */
 			GPIOC->ODR &= ~GPIO_ODR_OD13;
-			GPIOC->ODR |= GPIO_ODR_OD11;
+			GPIOC->ODR |= GPIO_ODR_OD6;
 			GPIOC->ODR |= GPIO_ODR_OD12;
-			GPIOC->ODR |= GPIO_ODR_OD10;
+			GPIOC->ODR |= GPIO_ODR_OD8;
 			position++;		// update the display number for the next call to enter case display2
 			return display1;
 			break;
@@ -289,9 +329,9 @@ uint8_t changeDisplay(void){
 		case display2:
 			/* Turn on digit 2 and turn off the rest */
 			GPIOC->ODR |= GPIO_ODR_OD13;
-			GPIOC->ODR &= ~GPIO_ODR_OD11;
+			GPIOC->ODR &= ~GPIO_ODR_OD6;
 			GPIOC->ODR |= GPIO_ODR_OD12;
-			GPIOC->ODR |= GPIO_ODR_OD10;
+			GPIOC->ODR |= GPIO_ODR_OD8;
 			position++;		// update the display number for the next call to enter case display3
 			return display2;
 			break;
@@ -299,9 +339,9 @@ uint8_t changeDisplay(void){
 		case display3:
 			/* Turn on digit 3 and turn off the rest */
 			GPIOC->ODR |= GPIO_ODR_OD13;
-			GPIOC->ODR |= GPIO_ODR_OD11;
+			GPIOC->ODR |= GPIO_ODR_OD6;
 			GPIOC->ODR &= ~GPIO_ODR_OD12;
-			GPIOC->ODR |= GPIO_ODR_OD10;
+			GPIOC->ODR |= GPIO_ODR_OD8;
 			position++;		// update the display number for the next call to enter case display4
 			return display3;
 			break;
@@ -309,9 +349,9 @@ uint8_t changeDisplay(void){
 		case display4:
 			/* Turn on digit 4 and turn off the rest */
 			GPIOC->ODR |= GPIO_ODR_OD13;
-			GPIOC->ODR |= GPIO_ODR_OD11;
+			GPIOC->ODR |= GPIO_ODR_OD6;
 			GPIOC->ODR |= GPIO_ODR_OD12;
-			GPIOC->ODR &= ~GPIO_ODR_OD10;
+			GPIOC->ODR &= ~GPIO_ODR_OD8;
 			position = 0;		// update the display number for the next call to go back to case display1
 			return display4;
 			break;
@@ -326,112 +366,112 @@ void drawNumber(uint8_t digit_number){
 	switch (digit_number) {
 		case 0:
 			/* Draw the digit 0 */
-			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment A on
-			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment B on
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR &= ~GPIO_ODR_OD7;		// segment D on
-			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment E on
-			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment F on
-			GPIOC->ODR |= GPIO_ODR_OD2;			// segment G off
+			GPIOC->ODR &= ~GPIO_ODR_OD11;		// segment A on
+			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment B on
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment D on
+			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment E on
+			GPIOC->ODR &= ~GPIO_ODR_OD10;		// segment F on
+			GPIOB->ODR |= GPIO_ODR_OD12;			// segment G off
 			break;
 
 		case 1:
 			/* Draw the digit 1 */
-			GPIOB->ODR |= GPIO_ODR_OD12;		// segment A off
-			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment B on
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR |= GPIO_ODR_OD7;			// segment D off
-			GPIOD->ODR |= GPIO_ODR_OD2;			// segment E off
-			GPIOA->ODR |= GPIO_ODR_OD11;		// segment F off
-			GPIOC->ODR |= GPIO_ODR_OD2;			// segment G off
+			GPIOC->ODR |= GPIO_ODR_OD11;		// segment A off
+			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment B on
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR |= GPIO_ODR_OD11;		// segment D off
+			GPIOA->ODR |= GPIO_ODR_OD12;		// segment E off
+			GPIOC->ODR |= GPIO_ODR_OD10;		// segment F off
+			GPIOB->ODR |= GPIO_ODR_OD12;			// segment G off
 			break;
 
 		case 2:
 			/* Draw the digit 2 */
-			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment A on
-			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment B on
-			GPIOC->ODR |= GPIO_ODR_OD3;			// segment C off
-			GPIOB->ODR &= ~GPIO_ODR_OD7;		// segment D on
-			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment E on
-			GPIOA->ODR |= GPIO_ODR_OD11;		// segment F off
-			GPIOC->ODR &= ~GPIO_ODR_OD2;		// segment G on
+			GPIOC->ODR &= ~GPIO_ODR_OD11;		// segment A on
+			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment B on
+			GPIOC->ODR |= GPIO_ODR_OD5;			// segment C off
+			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment D on
+			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment E on
+			GPIOC->ODR |= GPIO_ODR_OD10;		// segment F off
+			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment G on
 			break;
 
 		case 3:
 			/* Draw the digit 3 */
-			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment A on
-			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment B on
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR &= ~GPIO_ODR_OD7;		// segment D on
-			GPIOD->ODR |= GPIO_ODR_OD2;			// segment E off
-			GPIOA->ODR |= GPIO_ODR_OD11;		// segment F off
-			GPIOC->ODR &= ~GPIO_ODR_OD2;		// segment G on
+			GPIOC->ODR &= ~GPIO_ODR_OD11;		// segment A on
+			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment B on
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment D on
+			GPIOA->ODR |= GPIO_ODR_OD12;		// segment E off
+			GPIOC->ODR |= GPIO_ODR_OD10;		// segment F off
+			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment G on
 			break;
 
 		case 4:
 			/* Draw the digit 4 */
-			GPIOB->ODR |= GPIO_ODR_OD12;		// segment A off
-			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment B on
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR |= GPIO_ODR_OD7;			// segment D off
-			GPIOD->ODR |= GPIO_ODR_OD2;			// segment E off
-			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment F on
-			GPIOC->ODR &= ~GPIO_ODR_OD2;		// segment G on
+			GPIOC->ODR |= GPIO_ODR_OD11;		// segment A off
+			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment B on
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR |= GPIO_ODR_OD11;		// segment D off
+			GPIOA->ODR |= GPIO_ODR_OD12;		// segment E off
+			GPIOC->ODR &= ~GPIO_ODR_OD10;		// segment F on
+			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment G on
 			break;
 
 		case 5:
 			/* Draw the digit 5 */
-			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment A on
-			GPIOA->ODR |= GPIO_ODR_OD12;		// segment B off
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR &= ~GPIO_ODR_OD7;		// segment D on
-			GPIOD->ODR |= GPIO_ODR_OD2;			// segment E off
-			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment F on
-			GPIOC->ODR &= ~GPIO_ODR_OD2;		// segment G on
+			GPIOC->ODR &= ~GPIO_ODR_OD11;		// segment A on
+			GPIOD->ODR |= GPIO_ODR_OD2;			// segment B off
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment D on
+			GPIOA->ODR |= GPIO_ODR_OD12;			// segment E off
+			GPIOC->ODR &= ~GPIO_ODR_OD10;		// segment F on
+			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment G on
 			break;
 
 		case 6:
 			/* Draw the digit 6 */
-			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment A on
-			GPIOA->ODR |= GPIO_ODR_OD12;		// segment B off
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR &= ~GPIO_ODR_OD7;		// segment D on
-			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment E on
-			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment F on
-			GPIOC->ODR &= ~GPIO_ODR_OD2;		// segment G on
+			GPIOC->ODR &= ~GPIO_ODR_OD11;		// segment A on
+			GPIOD->ODR |= GPIO_ODR_OD2;			// segment B off
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment D on
+			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment E on
+			GPIOC->ODR &= ~GPIO_ODR_OD10;		// segment F on
+			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment G on
 			break;
 
 		case 7:
 			/* Draw the digit 7 */
-			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment A on
-			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment B on
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR |= GPIO_ODR_OD7;			// segment D off
-			GPIOD->ODR |= GPIO_ODR_OD2;			// segment E off
-			GPIOA->ODR |= GPIO_ODR_OD11;		// segment F off
-			GPIOC->ODR |= GPIO_ODR_OD2;			// segment G off
+			GPIOC->ODR &= ~GPIO_ODR_OD11;		// segment A on
+			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment B on
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR |= GPIO_ODR_OD11;		// segment D off
+			GPIOA->ODR |= GPIO_ODR_OD12;		// segment E off
+			GPIOC->ODR |= GPIO_ODR_OD10;		// segment F off
+			GPIOB->ODR |= GPIO_ODR_OD12;		// segment G off
 			break;
 
 		case 8:
 			/* Draw the digit 8 */
-			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment A on
-			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment B on
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR &= ~GPIO_ODR_OD7;		// segment D on
-			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment E on
-			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment F on
-			GPIOC->ODR &= ~GPIO_ODR_OD2;		// segment G on
+			GPIOC->ODR &= ~GPIO_ODR_OD11;		// segment A on
+			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment B on
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment D on
+			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment E on
+			GPIOC->ODR &= ~GPIO_ODR_OD10;		// segment F on
+			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment G on
 			break;
 
 		case 9:
 			/* Draw the digit 9 */
-			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment A on
-			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment B on
-			GPIOC->ODR &= ~GPIO_ODR_OD3;		// segment C on
-			GPIOB->ODR &= ~GPIO_ODR_OD7;		// segment D on
-			GPIOD->ODR |= GPIO_ODR_OD2;			// segment E off
-			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment F on
-			GPIOC->ODR &= ~GPIO_ODR_OD2;		// segment G on
+			GPIOC->ODR &= ~GPIO_ODR_OD11;		// segment A on
+			GPIOD->ODR &= ~GPIO_ODR_OD2;		// segment B on
+			GPIOC->ODR &= ~GPIO_ODR_OD5;		// segment C on
+			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment D on
+			GPIOA->ODR |= GPIO_ODR_OD12;		// segment E off
+			GPIOC->ODR &= ~GPIO_ODR_OD10;		// segment F on
+			GPIOB->ODR &= ~GPIO_ODR_OD12;		// segment G on
 			break;
 		default:
 			break;
