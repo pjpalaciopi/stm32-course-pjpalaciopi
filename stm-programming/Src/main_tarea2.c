@@ -9,6 +9,7 @@
 #include "stm32f411xe.h"
 #include "stm32f4xx.h"
 
+/* Enumeration that defines each digit display position */
 typedef enum{
 	display1,
 	display2,
@@ -16,21 +17,21 @@ typedef enum{
 	display4
 }digit_t;
 
-// variable
-volatile uint8_t refresh_interrupt_flag = 0;
-uint16_t counter = 0;
-uint8_t digit_position = 0;
-uint8_t digit_number = 0;
-uint8_t position = 0;
-uint8_t units = 0;
-uint8_t tens = 0;
-uint8_t hundreds = 0;
-uint8_t thousands = 0;
+/* Variables */
+volatile uint8_t refresh_interrupt_flag = 0;		// interruption flag for the refresh timer
+volatile uint8_t exti_increment_flag = 0;			// interruption flag for the exti that increments the counter
+volatile uint8_t exti_decrement_flag = 0;			// interruption flag for the exti that decrements the counter
 
-uint8_t PC1State = 0;
-uint8_t PC0State = 0;
+uint16_t counter = 0;								// counter to be displayed on the 7 segment display
+uint8_t digit_position = 0;							// current digit selected to be active by the PNP transistor
+uint8_t position = 0;								// update the digit selected to the next position
+uint8_t digit_number = 0;							// number to be drawn in the 7 segment display
+uint8_t units = 0;									// units value of the counter
+uint8_t tens = 0;									// tens value of the counter
+uint8_t hundreds = 0;								// hundreds value of the counter
+uint8_t thousands = 0;								// thousands value of the counter
 
-// headers
+/* Function headers */
 void initGPIO(void);
 void initTimer(void);
 void initEXTI(void);
@@ -38,6 +39,7 @@ void initEXTI(void);
 uint8_t changeDisplay(void);
 void drawNumber(uint8_t number);
 uint8_t extractNumber(uint8_t digit);
+void updateCounter(void);
 
 int main(void){
 	initGPIO();
@@ -45,15 +47,19 @@ int main(void){
 	initEXTI();
 
 	while(1){
+		/* If the refresh timer interruption is called change the display, extract the value for the current
+		 * digit and print it to the desired display */
 		if (refresh_interrupt_flag){
 			digit_position = changeDisplay();
 			digit_number = extractNumber(digit_position);
 			drawNumber(digit_number);
 
+			/* Clear the refresh flag */
 			refresh_interrupt_flag = 0;
 		}
-		PC1State = (GPIOC->IDR >> 1) & 1;
-		PC0State = (GPIOC->IDR) & 1;
+
+		/* If the counter EXTI interruption is called increment or decrement accordingly*/
+		updateCounter();
 	}
 }
 
@@ -152,7 +158,7 @@ void initGPIO(void){
 	GPIOC->ODR &= ~GPIO_ODR_OD5;
 
 	/* Configure PA11 as segment D of the display */
-	/* Set GPIOB Pin 7 as output */
+	/* Set GPIOA Pin 11 as output */
 	GPIOA->MODER |= GPIO_MODER_MODE11_0;
 	/* Set output type as push-pull */
 	GPIOA->OTYPER &= ~GPIO_OTYPER_OT11;
@@ -268,7 +274,7 @@ void initEXTI(void){
 
 	/* Configure SYSCONFG EXTI MUX to select EXTI0*/
 	SYSCFG->EXTICR[0] &= ~(SYSCFG_EXTICR1_EXTI0);	// Clear register
-	SYSCFG->EXTICR[0] |= (SYSCFG_EXTICR1_EXTI0_PC);	// Write EXTI1 to work with port GPIOC (PC0)
+	SYSCFG->EXTICR[0] |= (SYSCFG_EXTICR1_EXTI0_PC);	// Write EXTI0 to work with port GPIOC (PC0)
 	EXTI->RTSR |= EXTI_RTSR_TR0;					// Enable rising edge detection
 	NVIC_EnableIRQ(EXTI0_IRQn);						// Tell NVIC I'm using EXTI0
 	EXTI->PR |= EXTI_PR_PR0;						// Clear flag
@@ -279,7 +285,7 @@ void initEXTI(void){
 /* ISR for the blink period */
 void TIM3_IRQHandler(void){
 	/* verify which flag is up for the interruption */
-	if (TIM3->SR && TIM_SR_UIF){
+	if (TIM3->SR & TIM_SR_UIF){
 		GPIOH->ODR ^= GPIO_ODR_OD1;		// change the state of PH1
 		TIM3->SR &= ~(TIM_SR_UIF);		// clear flag
 	}
@@ -288,7 +294,7 @@ void TIM3_IRQHandler(void){
 /* ISR for the refresh rate */
 void TIM4_IRQHandler(void){
 	/* Check which flag is up */
-	if (TIM4->SR && TIM_SR_UIF){
+	if (TIM4->SR & TIM_SR_UIF){
 		TIM4->SR &= ~TIM_SR_UIF;		// clear flag
 		/* I write to a custom flag to avoid doing computations during the interruption */
 		refresh_interrupt_flag = 1;
@@ -297,19 +303,19 @@ void TIM4_IRQHandler(void){
 
 /* ISR for the EXTI1 counter up */
 void EXTI1_IRQHandler(void){
-	if (EXTI->PR && EXTI_PR_PR1){
+	if (EXTI->PR & EXTI_PR_PR1){
 		/* The EXTI pending register is cleared by writing 1 */
 		EXTI->PR |= EXTI_PR_PR1;		// clear flag
-		counter--;						// every variable to be changed between an interruption must be volatile
+		exti_decrement_flag = 1;		// every variable to be changed between an interruption must be volatile
 	}
 }
 
 /* ISR for the EXTI0 counter down */
 void EXTI0_IRQHandler(void){
-	if (EXTI->PR && EXTI_PR_PR0){
+	if (EXTI->PR & EXTI_PR_PR0){
 		/* The EXTI pending register is cleared by writing 1 */
 		EXTI->PR |= EXTI_PR_PR0;		// clear flag
-		counter++;						// every variable to be changed between an interruption must be volatile
+		exti_increment_flag = 1;		// every variable to be changed between an interruption must be volatile
 	}
 }
 
@@ -372,7 +378,7 @@ void drawNumber(uint8_t digit_number){
 			GPIOA->ODR &= ~GPIO_ODR_OD11;		// segment D on
 			GPIOA->ODR &= ~GPIO_ODR_OD12;		// segment E on
 			GPIOC->ODR &= ~GPIO_ODR_OD10;		// segment F on
-			GPIOB->ODR |= GPIO_ODR_OD12;			// segment G off
+			GPIOB->ODR |= GPIO_ODR_OD12;		// segment G off
 			break;
 
 		case 1:
@@ -383,7 +389,7 @@ void drawNumber(uint8_t digit_number){
 			GPIOA->ODR |= GPIO_ODR_OD11;		// segment D off
 			GPIOA->ODR |= GPIO_ODR_OD12;		// segment E off
 			GPIOC->ODR |= GPIO_ODR_OD10;		// segment F off
-			GPIOB->ODR |= GPIO_ODR_OD12;			// segment G off
+			GPIOB->ODR |= GPIO_ODR_OD12;		// segment G off
 			break;
 
 		case 2:
@@ -476,13 +482,12 @@ void drawNumber(uint8_t digit_number){
 		default:
 			break;
 	}
-
 }
 
 /* Extract the individual value for each digit position */
 uint8_t extractNumber(uint8_t digit_position){
-	uint16_t aux = counter;				// Declare the an auxiliary variable to operate over
-	units = aux % 10;					// the units is the remainder after division by 1
+	uint16_t aux = counter;				// Declare an auxiliary variable to operate over
+	units = aux % 10;					// the units is the remainder
 	tens = (aux / 10) % 10;				// the tens is the remainder after division by 10
 	hundreds = (aux / 100) % 10;		// the hundreds is the remainder after division by 100
 	thousands = (aux / 1000) % 10;		// the thousands is the remainder after division by 1000
@@ -506,6 +511,21 @@ uint8_t extractNumber(uint8_t digit_position){
 	return 0;
 }
 
+/* Takes the custom flag generated during each EXTI interruption and updates the counter
+ * according to the EXTI that generated the flag */
+void updateCounter(void){
+	if (exti_increment_flag){
+		counter++;
+
+		exti_increment_flag = 0;
+	}
+
+	else if (exti_decrement_flag){
+		counter--;
+
+		exti_decrement_flag = 0;
+	}
+}
 
 
 
