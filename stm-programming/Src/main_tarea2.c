@@ -3,6 +3,15 @@
  *
  *  Created on: Jun 6, 2026
  *      Author: pedro
+ *
+ *      El prgrama hace uso de 12 pines GPIO, los Timers 3 y 4 y los canales EXTI0 y EXTI1 del puerto C
+ *      para controlar un display 7 segmentos de 4 digitos.
+ *      4 de los pines alimentan la base de 4 transistores pnp que controlan que digito se prende en cada
+ *      momento, 7 son para cada uno de los segmentos y 1 es para un blinky.
+ *      El TIM3 controla el periodo del blinky y el TIM4 la frecuencia de refresco del display.
+ *      Finalmente, el EXTI0 detecta flancos de subida y emite una interrupcion que aumenta el numero mostrado
+ *      en el display, el EXTI1 detecta flancos de bajada y emite una interrupcion que decrementa el numero
+ *      que aparece en el display.
  */
 
 #include <stdint.h>
@@ -238,8 +247,8 @@ void initTimer(void){
 	/* configure TIM4 to control the display refresh rate*/
 	/* set prescaler to 0.1 ms */
 	TIM4->PSC = (1600 -1);
-	/* set autorreload to 70 * 0.1 ms = 8 ms */
-	TIM4->ARR = (70 - 1);
+	/* set autorreload to 50 * 0.1 ms = 5 ms */
+	TIM4->ARR = (50 - 1);
 	/* reset counter */
 	TIM4->CNT = 0;
 	/* clean interruption flag */
