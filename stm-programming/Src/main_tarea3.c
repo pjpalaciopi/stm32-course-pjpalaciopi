@@ -19,8 +19,10 @@ volatile uint8_t msg_flag = 0;
 TIM_HandleTypeDef htim2 = {0};
 
 /* USART2 handle — must be global so stm32f4xx_it.c can access it */
-USART_HandleTypeDef husart2 = {0};
+UART_HandleTypeDef huart2 = {0};
+volatile uint8_t rx_flag = 0;
 uint8_t msg_buffer[64] = {0};
+uint8_t Rx_char = {0};
 
 /* ADC handle — must be global so stm32f4xx_it.c can access it */
 ADC_HandleTypeDef hadc1 = {0};
@@ -46,8 +48,6 @@ int main(void)
     usart2_Init();
     adc_Init();
 
-    HAL_USART_Transmit(&husart2, (uint8_t *)"hola mundo! \n\r", strlen("hola mundo! \n\r") - 1, 100);
-
     while (1)
     {
         /* application loop — LED toggling happens in the callback */
@@ -56,19 +56,9 @@ int main(void)
     	{
     		adc_value_mv = (float)((3300.0f/4095.0f) * raw_adc);
     		sprintf((char *)msg_buffer, "ADC value: %f\n\r", adc_value_mv);
-    		HAL_USART_Transmit(&husart2, msg_buffer, strlen((char *)msg_buffer), 100);
+    		HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
     		msg_flag = 0;
     	}
-
-//    	if (adc_done)
-//    	{
-//    		adc_value_mv = (float)((3300.0f/4095.0f) * raw_adc);
-//    		sprintf((char *)msg_buffer, "ADC value: %f\n\r", adc_value_mv);
-//    		HAL_USART_Transmit(&husart2, msg_buffer, strlen((char *)msg_buffer), 100);
-//
-//    		adc_done = 0;
-//    	}
-
     }
 }
 
@@ -191,7 +181,7 @@ static void tim3_Init(void)
     htim3.Instance               = TIM3;
     htim3.Init.Prescaler         = 16000 - 1;
     htim3.Init.CounterMode       = TIM_COUNTERMODE_UP;
-    htim3.Init.Period            = 1000 - 1;
+    htim3.Init.Period            = 250 - 1;
     htim3.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
     htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
 
@@ -241,6 +231,7 @@ static void tim2_Init(void)
 static void usart2_Init(void){
 	__HAL_RCC_GPIOA_CLK_ENABLE();
 
+	/* Configure PA2 as Tx */
 	GPIO_InitTypeDef GPIO_Init_Tx = {0};
 	GPIO_Init_Tx.Pin = GPIO_PIN_2;
 	GPIO_Init_Tx.Mode = GPIO_MODE_AF_PP;
@@ -250,16 +241,36 @@ static void usart2_Init(void){
 
 	HAL_GPIO_Init(GPIOA, &GPIO_Init_Tx);
 
+	/* Configure PA3 as Rx */
+	GPIO_InitTypeDef GPIO_Init_Rx = {0};
+	GPIO_Init_Rx.Pin = GPIO_PIN_3;
+	GPIO_Init_Rx.Mode = GPIO_MODE_AF_PP;
+	GPIO_Init_Rx.Pull = GPIO_NOPULL;
+	GPIO_Init_Rx.Speed = GPIO_SPEED_FREQ_HIGH;
+	GPIO_Init_Rx.Alternate = GPIO_AF7_USART2;
+
+	HAL_GPIO_Init(GPIOA, &GPIO_Init_Rx);
+
+	/* Turn on clock for USART2 */
     __HAL_RCC_USART2_CLK_ENABLE();
 
-    husart2.Instance = USART2;
-    husart2.Init.BaudRate = 19200;
-    husart2.Init.Mode = USART_MODE_TX;
-    husart2.Init.Parity = USART_PARITY_NONE;
-    husart2.Init.StopBits = USART_STOPBITS_1;
-    husart2.Init.WordLength = USART_WORDLENGTH_8B;
+    /* Configure USART2 for transmission and reception */
+    huart2.Instance = USART2;
+    huart2.Init.BaudRate = 19200;
+    huart2.Init.Mode = UART_MODE_TX_RX;
+    huart2.Init.Parity = UART_PARITY_NONE;
+    huart2.Init.StopBits = UART_STOPBITS_1;
+    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
 
-    HAL_USART_Init(&husart2);
+    /* Load USART2 configuration */
+    HAL_UART_Init(&huart2);
+
+    /* Enable USART2 interrupt line in the NVIC */
+    HAL_NVIC_EnableIRQ(USART2_IRQn);
+
+    HAL_UART_Receive_IT(&huart2, &Rx_char, 1);
 }
 
 
@@ -284,4 +295,14 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 		raw_adc = HAL_ADC_GetValue(hadc);
 		adc_done = 1;
 	}
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART2)
+    {
+    	HAL_UART_Transmit(&huart2, &Rx_char, 1, 100);
+
+        HAL_UART_Receive_IT(&huart2, &Rx_char, 1);
+    }
 }

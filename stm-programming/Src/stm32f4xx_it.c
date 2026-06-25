@@ -17,6 +17,8 @@
 extern TIM_HandleTypeDef htim3;
 /* Declare the ADC handle — defined in main.c */
 extern ADC_HandleTypeDef hadc1;
+/* Declare the USART2 handle — defined in main.c */
+extern UART_HandleTypeDef huart2;
 
 
 /* SysTick handler — required by HAL for HAL_Delay() and timeouts */
@@ -35,4 +37,10 @@ void TIM3_IRQHandler(void)
 void ADC_IRQHandler(void)
 {
 	HAL_ADC_IRQHandler(&hadc1);
+}
+
+/* USART2 handler used for reception */
+void USART2_IRQHandler(void)
+{
+    HAL_UART_IRQHandler(&huart2);
 }
