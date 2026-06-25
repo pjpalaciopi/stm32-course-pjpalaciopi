@@ -42,7 +42,7 @@ int main(void)
     usart2_Init();
     adc_Init();
 
-    HAL_USART_Transmit(&husart2, (uint8_t *)"hola mundo! \n\r", 15, 100);
+    HAL_USART_Transmit(&husart2, (uint8_t *)"hola mundo! \n\r", strlen("hola mundo! \n\r"), 100);
 
     HAL_ADC_Start_IT(&hadc1);
 
