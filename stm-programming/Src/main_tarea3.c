@@ -9,6 +9,12 @@
 #include <string.h>
 #include "stm32f4xx_hal.h"
 
+/* TIM4 handle — must be global so stm32f4xx_it.c can access it */
+TIM_HandleTypeDef htim4 = {0};
+uint16_t old_position = 0;
+uint16_t position = 0;
+uint8_t dir = 0;
+
 /* TIM3 handle — must be global so stm32f4xx_it.c can access it */
 TIM_HandleTypeDef htim3 = {0};
 volatile uint8_t msg_flag = 0;
@@ -17,6 +23,11 @@ volatile uint8_t msg_flag = 0;
  * This timer controls the ADC conversion
  *  */
 TIM_HandleTypeDef htim2 = {0};
+
+/* TIM1 handle — must be global so stm32f4xx_it.c can access it
+ *  */
+TIM_HandleTypeDef htim1 = {0};
+
 
 /* USART2 handle — must be global so stm32f4xx_it.c can access it */
 UART_HandleTypeDef huart2 = {0};
@@ -33,18 +44,22 @@ float adc_value_mv = 0.0f;
 /* Private function prototypes */
 static void SystemClock_Config(void);
 static void gpio_Init(void);
+static void tim4_Init(void);
 static void tim3_Init(void);
 static void tim2_Init(void);
+static void tim1_init(void);
 static void usart2_Init(void);
 static void adc_Init(void);
 
 int main(void)
 {
-    HAL_Init();           /* initialize HAL: SysTick, cache, priority grouping */
-    SystemClock_Config(); /* configure clock tree: HSI at 16 MHz               */
-    gpio_Init();          /* configure PA5 as push-pull output                  */
-    tim3_Init();          /* configure TIM3: update event every 250 ms          */
-    tim2_Init();          /* configure TIM2: update event every 20 ms          */
+    HAL_Init();				/* initialize HAL: SysTick, cache, priority grouping */
+    SystemClock_Config();	/* configure clock tree: HSI at 16 MHz */
+    gpio_Init();          	/* configure PA5 as push-pull output */
+    tim4_Init();			/* configure TIM4 in Encoder mode */
+    tim3_Init();	        /* configure TIM3: update event every 250 ms */
+    tim2_Init();			/* configure TIM2: update event every 20 ms */
+    tim1_init();
     usart2_Init();
     adc_Init();
 
@@ -58,6 +73,30 @@ int main(void)
     		sprintf((char *)msg_buffer, "ADC value: %f\n\r", adc_value_mv);
     		HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
     		msg_flag = 0;
+    	}
+
+    	// ########################## BUG BUG when counting back (2^16-1)/4 mod 100 = 83
+    	position = (__HAL_TIM_GET_COUNTER(&htim4) / 4) % 100;
+
+    	if (position != old_position)
+    	{
+//    	    sprintf((char *)msg_buffer, "Position = %d\r\n", position);
+//
+//    	    HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
+//
+
+    		dir = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim4);
+
+    		sprintf((char *)msg_buffer,
+    		        "CNT=%u DIR=%u\r\n",
+    		        position,
+    		        dir);
+
+    		HAL_UART_Transmit(&huart2,
+    		                  msg_buffer,
+    		                  strlen((char *)msg_buffer),
+    		                  100);
+    	    old_position = position;
     	}
     }
 }
@@ -162,6 +201,62 @@ static void adc_Init(void)
     HAL_ADC_Start_IT(&hadc1);
 }
 
+/* TIM4 configuration in encoder mode */
+static void tim4_Init(void)
+{
+	/* Configure GPIO pins B6 (ch1) and B7 (ch2) as alternate function2 to work with TIM4*/
+	/* Turn on GPIOB clock */
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+
+	GPIO_InitTypeDef GPIO_Encoder = {0};
+
+	GPIO_Encoder.Pin = GPIO_PIN_6 | GPIO_PIN_7;		/* Set the two bits at once */
+	GPIO_Encoder.Mode = GPIO_MODE_AF_PP;			/* Alternate function push-pull */
+	GPIO_Encoder.Pull = GPIO_NOPULL;				/* No pull-up pull-down */
+	GPIO_Encoder.Speed = GPIO_SPEED_FREQ_HIGH;
+	GPIO_Encoder.Alternate = GPIO_AF2_TIM4;			/* Set the alternate function 2 according to the datasheet */
+
+	/* Load channel configuration */
+	HAL_GPIO_Init(GPIOB, &GPIO_Encoder);
+
+    /* Enable TIM4 clock on APB1 bus */
+    __HAL_RCC_TIM4_CLK_ENABLE();
+
+    /* Configure TIM4 base */
+    htim4.Instance               = TIM4;
+    htim4.Init.Prescaler         = 0;								/* In Encoder mode the counter is not driven by the timer so the prescaler is not necessary */
+    htim4.Init.CounterMode       = TIM_COUNTERMODE_UP;
+    htim4.Init.Period            = 0xffff;
+    htim4.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
+    htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+
+    /* Load configuration */
+    HAL_TIM_Base_Init(&htim4);
+
+    /* Define handler for the Encoder mode configuration */
+    TIM_Encoder_InitTypeDef EncoderConfig = {0};
+
+    /* Uses transitions from both channels resulting in 4x decoding as opposed to the other options that
+     * only uses one channel edge to count resulting in 2x decoding*/
+    EncoderConfig.EncoderMode = TIM_ENCODERMODE_TI12;
+
+    EncoderConfig.IC1Polarity = TIM_INPUTCHANNELPOLARITY_RISING;
+    EncoderConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;			/* Tells the timer to direct the ch1 input to input capture 1 */
+    EncoderConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+    EncoderConfig.IC1Filter = 4;
+
+    EncoderConfig.IC2Polarity = TIM_INPUTCHANNELPOLARITY_RISING;
+    EncoderConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;			/* Tells the timer to direct the ch2 input to input capture 2 */
+    EncoderConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+    EncoderConfig.IC2Filter = 4;
+
+    /* Load Encoder configuration */
+    HAL_TIM_Encoder_Init(&htim4, &EncoderConfig);
+
+    /* Start the timer in encoder mode */
+    HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
+}
+
 /*
  * tim3_Init
  * Configures TIM3 to generate an update event every 250 ms
@@ -195,6 +290,12 @@ static void tim3_Init(void)
     HAL_TIM_Base_Start_IT(&htim3);
 }
 
+/* Initial configuration for the TIM2 that controls the trigger output signal of the ADC conversion.
+ * It has a 16 kHz prescaler with gives a count each 1 ms. The period is set to 20 ms effectively
+ * sampling at 50 Hz.
+ * Additionally the timer must be configured as master so that it can serve as an input to trigger
+ * the ADC conversion.
+ *  */
 static void tim2_Init(void)
 {
     /* Enable TIM2 clock on APB1 bus */
@@ -223,9 +324,61 @@ static void tim2_Init(void)
     HAL_TIM_Base_Start(&htim2);
 }
 
+/* Configure TIM1 as PWM with 4 channels PA8 - PA10 */
+static void tim1_init(void)
+{
+	/* Turn on Timer 1 clock */
+	__HAL_RCC_TIM1_CLK_ENABLE();
+
+	/* Configure GPIOA pins as alternate functions */
+	/* Turn on GPIOA clock */
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	GPIO_InitTypeDef GPIO_PWM_channels = {0};
+
+	GPIO_PWM_channels.Pin = GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10;
+	GPIO_PWM_channels.Mode = GPIO_MODE_AF_PP;
+	GPIO_PWM_channels.Pull = GPIO_NOPULL;
+	GPIO_PWM_channels.Speed = GPIO_SPEED_FREQ_HIGH;
+	GPIO_PWM_channels.Alternate = GPIO_AF1_TIM1;
+
+	HAL_GPIO_Init(GPIOA, &GPIO_PWM_channels);
+
+	/* TIM1 base configuration */
+	htim1.Instance = TIM1;
+	htim1.Init.Prescaler = 15;
+	htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim1.Init.Period = 999;
+	htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim1.Init.RepetitionCounter = 0;
+	htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+
+	HAL_TIM_PWM_Init(&htim1);
+
+	/* Configure PWM */
+	TIM_OC_InitTypeDef PWM_Config = {0};
+
+	PWM_Config.OCMode = TIM_OCMODE_PWM1;
+	PWM_Config.OCPolarity = TIM_OCPOLARITY_HIGH;
+	PWM_Config.OCFastMode = TIM_OCFAST_DISABLE;
+
+	/* Configures the Capture/Compare register, the Duty = CC/(ARR + 1) */
+	PWM_Config.Pulse = 750;
+	HAL_TIM_PWM_ConfigChannel(&htim1, &PWM_Config, TIM_CHANNEL_1);
+
+	PWM_Config.Pulse = 750;
+	HAL_TIM_PWM_ConfigChannel(&htim1, &PWM_Config, TIM_CHANNEL_2);
+
+	PWM_Config.Pulse = 750;
+	HAL_TIM_PWM_ConfigChannel(&htim1, &PWM_Config, TIM_CHANNEL_3);
+
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+}
+
 /* USART2 init
  *
- * configure usart2, with pins A2
+ * configure usart2, with pins A2 Tx and A3 Rx
  *
  * */
 static void usart2_Init(void){
