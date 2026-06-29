@@ -9,11 +9,25 @@
 #include <string.h>
 #include "stm32f4xx_hal.h"
 
-/* TIM4 handle — must be global so stm32f4xx_it.c can access it */
+/* Enumeration for the FMS */
+typedef enum
+{
+    STATE_IDLE,
+    STATE_UART_EVENT,
+    STATE_ENCODER_EVENT,
+    STATE_ADC_EVENT
+} FSM_State_t;
+
+FSM_State_t state = STATE_IDLE;
+
+/* TIM4 handle — must be global so stm32f4xx_it.c can access it
+ * This timer manages the encoder */
 TIM_HandleTypeDef htim4 = {0};
 uint16_t old_position = 0;
 uint16_t position = 0;
 uint8_t dir = 0;
+/* variable that triggers with a change in encoder position */
+uint8_t encoder_event = 0;
 
 /* TIM3 handle — must be global so stm32f4xx_it.c can access it */
 TIM_HandleTypeDef htim3 = {0};
@@ -25,20 +39,22 @@ volatile uint8_t msg_flag = 0;
 TIM_HandleTypeDef htim2 = {0};
 
 /* TIM1 handle — must be global so stm32f4xx_it.c can access it
+ * This timer controls the PWM
  *  */
 TIM_HandleTypeDef htim1 = {0};
 
 
 /* USART2 handle — must be global so stm32f4xx_it.c can access it */
 UART_HandleTypeDef huart2 = {0};
+volatile uint8_t uart_event = 0;
 volatile uint8_t rx_flag = 0;
-uint8_t msg_buffer[64] = {0};
+uint8_t msg_buffer[150] = {0};
 uint8_t Rx_char = {0};
 
 /* ADC handle — must be global so stm32f4xx_it.c can access it */
 ADC_HandleTypeDef hadc1 = {0};
 volatile uint16_t raw_adc = 0;
-volatile uint8_t adc_done = 0;
+volatile uint8_t adc_event = 0;
 float adc_value_mv = 0.0f;
 
 /* Private function prototypes */
@@ -50,6 +66,21 @@ static void tim2_Init(void);
 static void tim1_init(void);
 static void usart2_Init(void);
 static void adc_Init(void);
+
+/* FSM state functions */
+void change_encoder_position(void);
+void process_uart(void);
+void process_encoder(void);
+void process_adc(void);
+void change_state();
+void print_menu(void);
+void print_state(void);
+
+/* PWM value variables */
+uint16_t red_pwm = 0;
+uint16_t green_pwm = 0;
+uint16_t blue_pwm = 0;
+
 
 int main(void)
 {
@@ -63,41 +94,13 @@ int main(void)
     usart2_Init();
     adc_Init();
 
+    print_menu();
+    print_state();
+
     while (1)
     {
-        /* application loop — LED toggling happens in the callback */
-
-    	if (msg_flag)
-    	{
-    		adc_value_mv = (float)((3300.0f/4095.0f) * raw_adc);
-    		sprintf((char *)msg_buffer, "ADC value: %f\n\r", adc_value_mv);
-    		HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
-    		msg_flag = 0;
-    	}
-
-    	// ########################## BUG BUG when counting back (2^16-1)/4 mod 100 = 83
-    	position = (__HAL_TIM_GET_COUNTER(&htim4) / 4) % 100;
-
-    	if (position != old_position)
-    	{
-//    	    sprintf((char *)msg_buffer, "Position = %d\r\n", position);
-//
-//    	    HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
-//
-
-    		dir = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim4);
-
-    		sprintf((char *)msg_buffer,
-    		        "CNT=%u DIR=%u\r\n",
-    		        position,
-    		        dir);
-
-    		HAL_UART_Transmit(&huart2,
-    		                  msg_buffer,
-    		                  strlen((char *)msg_buffer),
-    		                  100);
-    	    old_position = position;
-    	}
+    	change_encoder_position();
+    	change_state();
     }
 }
 
@@ -362,13 +365,13 @@ static void tim1_init(void)
 	PWM_Config.OCFastMode = TIM_OCFAST_DISABLE;
 
 	/* Configures the Capture/Compare register, the Duty = CC/(ARR + 1) */
-	PWM_Config.Pulse = 750;
+	PWM_Config.Pulse = 0;
 	HAL_TIM_PWM_ConfigChannel(&htim1, &PWM_Config, TIM_CHANNEL_1);
 
-	PWM_Config.Pulse = 750;
+	PWM_Config.Pulse = 0;
 	HAL_TIM_PWM_ConfigChannel(&htim1, &PWM_Config, TIM_CHANNEL_2);
 
-	PWM_Config.Pulse = 750;
+	PWM_Config.Pulse = 0;
 	HAL_TIM_PWM_ConfigChannel(&htim1, &PWM_Config, TIM_CHANNEL_3);
 
 	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
@@ -437,7 +440,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     if (htim->Instance == TIM3)
     {
         HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-        msg_flag = 1;
     }
 }
 
@@ -445,8 +447,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
 	if (hadc->Instance == ADC1)
 	{
-		raw_adc = HAL_ADC_GetValue(hadc);
-		adc_done = 1;
+		adc_event = 1;
 	}
 }
 
@@ -454,8 +455,169 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
     {
-    	HAL_UART_Transmit(&huart2, &Rx_char, 1, 100);
+    	uart_event = 1;
 
         HAL_UART_Receive_IT(&huart2, &Rx_char, 1);
     }
 }
+
+void change_encoder_position(void)
+{
+	position = (__HAL_TIM_GET_COUNTER(&htim4) / 4) % 100;
+
+	if(position != old_position)
+	{
+	    encoder_event = 1;
+	    old_position = position;
+	}
+
+}
+
+void process_uart(void)
+{
+	/* The Rx interruption can receive the following characters:
+	 * '+': increments the PWM duty in 10 units, effectively yielding 100 levels
+	 * '-': decreases the PWM duty in 10 units, effectively yielding 100 levels
+	 * */
+	if(Rx_char == '+')
+	{
+	    if(green_pwm >= 1000)
+	        green_pwm = 0;
+	    else
+	        green_pwm += 10;
+	}
+	else if(Rx_char == '-')
+	{
+	    if(green_pwm == 0)
+	        green_pwm = 1000;
+	    else
+	        green_pwm -= 10;
+	}
+
+	else if(Rx_char == 'm')
+	{
+		print_menu();
+	}
+
+	else if(Rx_char == 's')
+	{
+		print_state();
+	}
+
+
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, green_pwm);
+}
+
+void process_encoder(void)
+{
+	/* The position range is (0 - 100) times 10 yields the corresponding duty between 0 - 1000 */
+    blue_pwm = position * 10;
+
+    /* set the new duty changing the CCR register */
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, blue_pwm);
+}
+
+void process_adc(void)
+{
+	raw_adc = HAL_ADC_GetValue(&hadc1);
+	/* get a value between (0 - 1000) as the PWM duty, normalizing the ADC conversion range (0 - 4095) */
+    red_pwm = raw_adc * 1000 / 4095;
+
+    /* set the new duty changing the CCR register */
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, red_pwm);
+}
+
+void change_state()
+{
+	switch(state)
+	{
+		case STATE_IDLE:
+
+			if(uart_event)
+				state = STATE_UART_EVENT;
+
+			else if(encoder_event)
+				state = STATE_ENCODER_EVENT;
+
+			else if(adc_event)
+				state = STATE_ADC_EVENT;
+
+			break;
+
+		case STATE_UART_EVENT:
+
+			process_uart();
+			uart_event = 0;
+			state = STATE_IDLE;
+
+			break;
+
+		case STATE_ENCODER_EVENT:
+
+			process_encoder();
+			encoder_event = 0;
+			state = STATE_IDLE;
+
+			break;
+
+		case STATE_ADC_EVENT:
+
+			process_adc();
+			adc_event = 0;
+			state = STATE_IDLE;
+
+			break;
+
+		default:
+			break;
+	}
+}
+
+void print_menu(void)
+{
+	    	sprintf((char *)msg_buffer, "Menu:\r\n 'm': print menu, 's': print current state\r\n"
+	    			" Potentiometer: Red LED, Encoder: Blue LED,"
+	    			" '+': Increase Green LED, '-': Decrease Green LED\r\n");
+
+	    	HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
+}
+
+void print_state(void)
+{
+	sprintf((char *)msg_buffer, "R=%u G=%u B=%u\r\n", red_pwm, green_pwm, blue_pwm);
+
+	HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
