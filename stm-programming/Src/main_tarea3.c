@@ -145,14 +145,14 @@ static void gpio_Init(void)
 
     /* Enable GPIOA clock on AHB1 bus
        Same as bare-metal: RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN */
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOH_CLK_ENABLE();
 
     /* Configure PA5 */
-    GPIO_blink.Pin   = GPIO_PIN_5;
+    GPIO_blink.Pin   = GPIO_PIN_1;
     GPIO_blink.Mode  = GPIO_MODE_OUTPUT_PP;
     GPIO_blink.Pull  = GPIO_NOPULL;
     GPIO_blink.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOA, &GPIO_blink);
+    HAL_GPIO_Init(GPIOH, &GPIO_blink);
 }
 
 static void adc_Init(void)
@@ -246,12 +246,12 @@ static void tim4_Init(void)
     EncoderConfig.IC1Polarity = TIM_INPUTCHANNELPOLARITY_RISING;
     EncoderConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;			/* Tells the timer to direct the ch1 input to input capture 1 */
     EncoderConfig.IC1Prescaler = TIM_ICPSC_DIV1;
-    EncoderConfig.IC1Filter = 4;
+    EncoderConfig.IC1Filter = 10;
 
     EncoderConfig.IC2Polarity = TIM_INPUTCHANNELPOLARITY_RISING;
     EncoderConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;			/* Tells the timer to direct the ch2 input to input capture 2 */
     EncoderConfig.IC2Prescaler = TIM_ICPSC_DIV1;
-    EncoderConfig.IC2Filter = 4;
+    EncoderConfig.IC2Filter = 10;
 
     /* Load Encoder configuration */
     HAL_TIM_Encoder_Init(&htim4, &EncoderConfig);
@@ -439,7 +439,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM3)
     {
-        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+        HAL_GPIO_TogglePin(GPIOH, GPIO_PIN_1);
     }
 }
 
@@ -463,7 +463,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void change_encoder_position(void)
 {
-	position = (__HAL_TIM_GET_COUNTER(&htim4) / 4) % 100;
+	int16_t encoder_count;
+
+	encoder_count = (int16_t)__HAL_TIM_GET_COUNTER(&htim4);
+
+	position = ((encoder_count / 4) % 101 + 101) % 101;
 
 	if(position != old_position)
 	{
