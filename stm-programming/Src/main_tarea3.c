@@ -3,6 +3,25 @@
  *
  *  Created on: Jun 25, 2026
  *      Author: pedro
+ *
+ *      El programa utiliza las librerias HAL de STM32. Su funcionamiento se basa en una máquina de estados finitos (FSM)
+ *       encargada de gestionar tres fuentes de entrada independientes para controlar el duty de las tres salidas PWM
+ *       que controlan un LED RGB. El sistema permanece en un estado de espera y, cuando ocurre un evento proveniente de
+ *       alguno de los periféricos, ejecuta la acción correspondiente y regresa nuevamente al estado de reposo.
+ *       El TIM1 se configura para generar tres señales PWM independientes que controlan la intensidad de los canales rojo,
+ *       verde y azul del LED RGB. El TIM2 opera en modo master y genera una señal TRGO cada 20 ms, la cual se utiliza como
+ *       trigger externo para iniciar las conversiones del ADC1, obteniendo una frecuencia de muestreo de 50 Hz para la
+ *       lectura del potenciómetro. El TIM3 genera una interrupción periódica cada 250 ms que controla el Blinky como
+ *       indicador visual del correcto funcionamiento del programa.El TIM4 se configura en modo Encoder para decodificar
+ *       las señales en cuadratura provenientes del encoder y determinar su posición. La comunicación con el computador se
+ *       realiza mediante el periférico USART2, el cual recibe comandos utilizando interrupciones y transmite información
+ *       del estado del sistema mediante polling. Finalmente, el módulo GPIO se emplea para configurar las entradas y salidas
+ *       necesarias para el funcionamiento de todos los periféricos.
+ *
+ *       El hardware utilizado: un encoder, un potenciómetro de 10 kΩ conectado a una entrada analógica del microcontrolador
+ *       y un LED RGB controlado mediante tres salidas PWM, cada una con su respectiva resistencia. La comunicación entre el
+ *       micro y el computador se realiza a través del puerto USB, el programa recibe caracteres individuales: 'm', 's', '+' y '-'.
+ *
  */
 
 #include <stdio.h>
@@ -18,27 +37,30 @@ typedef enum
     STATE_ADC_EVENT
 } FSM_State_t;
 
-FSM_State_t state = STATE_IDLE;
+FSM_State_t state = STATE_IDLE;		/* The FMS initializes in idle state */
 
-/* TIM4 handle — must be global so stm32f4xx_it.c can access it
- * This timer manages the encoder */
+/* Global variables */
+
+/* Encoder variables */
+/* TIM4 handle This timer manages the encoder
+ * This handler is used in other functions besides the timer4 init function, therefore in
+ * needs to be global so it is visible to them
+ * */
 TIM_HandleTypeDef htim4 = {0};
-uint16_t old_position = 0;
-uint16_t position = 0;
-uint8_t dir = 0;
-/* variable that triggers with a change in encoder position */
-uint8_t encoder_event = 0;
+uint16_t old_position = 0;		/* Last encoder position */
+uint16_t position = 0;			/* Current encoder position */
+uint8_t encoder_event = 0;		/* variable that triggers with a change in encoder position */
 
-/* TIM3 handle — must be global so stm32f4xx_it.c can access it */
+/* TIM3 handle — must be global so stm32f4xx_it.c can access it
+ * This timer manages the interruption of the blinking LED*/
 TIM_HandleTypeDef htim3 = {0};
-volatile uint8_t msg_flag = 0;
 
 /* TIM2 handle — must be global so stm32f4xx_it.c can access it
  * This timer controls the ADC conversion
  *  */
 TIM_HandleTypeDef htim2 = {0};
 
-/* TIM1 handle — must be global so stm32f4xx_it.c can access it
+/* TIM1 handle — must be global so other functions can access it
  * This timer controls the PWM
  *  */
 TIM_HandleTypeDef htim1 = {0};
@@ -90,16 +112,19 @@ int main(void)
     tim4_Init();			/* configure TIM4 in Encoder mode */
     tim3_Init();	        /* configure TIM3: update event every 250 ms */
     tim2_Init();			/* configure TIM2: update event every 20 ms */
-    tim1_init();
-    usart2_Init();
-    adc_Init();
+    tim1_init();			/* configure TIM1 as PWM with 3 channels */
+    usart2_Init();			/* Configure UART with transmission and reception */
+    adc_Init();				/* configure ADC */
 
-    print_menu();
-    print_state();
+    print_menu();			/* prints the initial options menu */
+    print_state();			/* prints the initial state of the LEDS */
 
     while (1)
     {
+    	/* Since the encoder is working with polling it must be checked at each iteration of the main loop */
     	change_encoder_position();
+
+    	/* the state function checks which state has been triggered from the previous iteration */
     	change_state();
     }
 }
@@ -137,7 +162,7 @@ static void SystemClock_Config(void)
 
 /*
  * gpio_Init
- * Configures PA5 as push-pull output — onboard LED on Nucleo board
+ * Configures PH1 as push-pull output
  */
 static void gpio_Init(void)
 {
@@ -155,6 +180,7 @@ static void gpio_Init(void)
     HAL_GPIO_Init(GPIOH, &GPIO_blink);
 }
 
+/* The ADC initializes on channel PA4 */
 static void adc_Init(void)
 {
     /* Enable GPIOA clock */
@@ -217,7 +243,7 @@ static void tim4_Init(void)
 	GPIO_Encoder.Mode = GPIO_MODE_AF_PP;			/* Alternate function push-pull */
 	GPIO_Encoder.Pull = GPIO_NOPULL;				/* No pull-up pull-down */
 	GPIO_Encoder.Speed = GPIO_SPEED_FREQ_HIGH;
-	GPIO_Encoder.Alternate = GPIO_AF2_TIM4;			/* Set the alternate function 2 according to the datasheet */
+	GPIO_Encoder.Alternate = GPIO_AF2_TIM4;			/* Set the alternate function 2 according to the data sheet */
 
 	/* Load channel configuration */
 	HAL_GPIO_Init(GPIOB, &GPIO_Encoder);
@@ -229,6 +255,9 @@ static void tim4_Init(void)
     htim4.Instance               = TIM4;
     htim4.Init.Prescaler         = 0;								/* In Encoder mode the counter is not driven by the timer so the prescaler is not necessary */
     htim4.Init.CounterMode       = TIM_COUNTERMODE_UP;
+    /* Working with the full range of the timer, this is processed later on the proccess_encoder()
+     * function to only operate from 0 to 100
+     * */
     htim4.Init.Period            = 0xffff;
     htim4.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
     htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -401,7 +430,7 @@ static void usart2_Init(void){
 	GPIO_InitTypeDef GPIO_Init_Rx = {0};
 	GPIO_Init_Rx.Pin = GPIO_PIN_3;
 	GPIO_Init_Rx.Mode = GPIO_MODE_AF_PP;
-	GPIO_Init_Rx.Pull = GPIO_NOPULL;
+	GPIO_Init_Rx.Pull = GPIO_PULLUP;
 	GPIO_Init_Rx.Speed = GPIO_SPEED_FREQ_HIGH;
 	GPIO_Init_Rx.Alternate = GPIO_AF7_USART2;
 
@@ -426,6 +455,8 @@ static void usart2_Init(void){
     /* Enable USART2 interrupt line in the NVIC */
     HAL_NVIC_EnableIRQ(USART2_IRQn);
 
+    /* The receive interruption function must be called right after the interruption occurs
+     * so that it is ready for the next event */
     HAL_UART_Receive_IT(&huart2, &Rx_char, 1);
 }
 
@@ -443,6 +474,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     }
 }
 
+/* ADC conversion callback triggered by TIM2 configured as master, working at 50 Hz */
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
 	if (hadc->Instance == ADC1)
@@ -451,6 +483,8 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 	}
 }
 
+/* Called when a reception event occurs, the reception HAL function must be
+ * called again so that it is ready for the next event */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2)
@@ -461,14 +495,24 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
+/* FMS state function it triggers when the encoder changes position */
 void change_encoder_position(void)
 {
 	int16_t encoder_count;
 
+	/* The encoder range is set by the period of timer 4 which is a 16 bit unsigned int variable
+	 * I need to cast it to a signed variable to process accordingly its value and get
+	 * the desired behavior. Previously I was using a 16 bit unsigned int and after performing
+	 * the modulo because of the overflow it yielded 83 and not 100 as expected */
 	encoder_count = (int16_t)__HAL_TIM_GET_COUNTER(&htim4);
 
+	/* The encoder_count is divided by 4 because of the 4 times encoding of the timer,
+	 * then the result is passed to a modulo operation, for positive values it works as intended,
+	 * if the variable is negative I need to add 101 so that it is in the correct range and perform
+	 * the modulo again*/
 	position = ((encoder_count / 4) % 101 + 101) % 101;
 
+	/* If the previous position is different from the current position it raises a flag */
 	if(position != old_position)
 	{
 	    encoder_event = 1;
@@ -498,17 +542,19 @@ void process_uart(void)
 	        green_pwm -= 10;
 	}
 
+	/* The char 'm' prints the options menu*/
 	else if(Rx_char == 'm')
 	{
 		print_menu();
 	}
 
+	/* The char 's' prints the current LED state */
 	else if(Rx_char == 's')
 	{
 		print_state();
 	}
 
-
+	/* Set the green PWM duty to the desired value */
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, green_pwm);
 }
 
@@ -531,10 +577,12 @@ void process_adc(void)
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, red_pwm);
 }
 
+/* This function processes the FSM state changes */
 void change_state()
 {
 	switch(state)
 	{
+	/* When the FMS is IDLE the function checks if any of the possible states have been called */
 		case STATE_IDLE:
 
 			if(uart_event)
@@ -548,6 +596,7 @@ void change_state()
 
 			break;
 
+			/* The UART event calls its process function, lowers the flag and changes the state back to IDLE */
 		case STATE_UART_EVENT:
 
 			process_uart();
@@ -556,6 +605,7 @@ void change_state()
 
 			break;
 
+			/* The ENCODER event calls its process function, lowers the flag and changes the state back to IDLE */
 		case STATE_ENCODER_EVENT:
 
 			process_encoder();
@@ -564,6 +614,7 @@ void change_state()
 
 			break;
 
+			/* The ADC event calls its process function, lowers the flag and changes the state back to IDLE */
 		case STATE_ADC_EVENT:
 
 			process_adc();
@@ -577,19 +628,27 @@ void change_state()
 	}
 }
 
+/* Prints a basic menu with the options that the user can input,
+ * It uses a 150 character buffer and transmits the message via the UART HAL transmit function
+ * with no interruption */
 void print_menu(void)
 {
-	    	sprintf((char *)msg_buffer, "Menu:\r\n 'm': print menu, 's': print current state\r\n"
-	    			" Potentiometer: Red LED, Encoder: Blue LED,"
-	    			" '+': Increase Green LED, '-': Decrease Green LED\r\n");
+	/* Prints the corresponding message to the buffer */
+	sprintf((char *)msg_buffer, "Menu:\r\n 'm': print menu, 's': print current state\r\n"
+			" Potentiometer: Red LED, Encoder: Blue LED,"
+			" '+': Increase Green LED, '-': Decrease Green LED\r\n");
 
-	    	HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
+	/* Transmits the message via UART */
+	HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
 }
 
 void print_state(void)
 {
+	/* Prints the corresponding message to the buffer, Ii uses the pwm duty variables to fill
+	 * the place holders */
 	sprintf((char *)msg_buffer, "R=%u G=%u B=%u\r\n", red_pwm, green_pwm, blue_pwm);
 
+	/* Transmits the message via UART */
 	HAL_UART_Transmit(&huart2, msg_buffer, strlen((char *)msg_buffer), 100);
 }
 
